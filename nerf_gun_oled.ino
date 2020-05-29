@@ -2,11 +2,14 @@
  * set tools->board->arduino nano
  */
 
+// cal96 ?
+
+
 #include <EEPROM.h>
 #include <Wire.h> 
 #include <Encoder.h>
 #include <SPI.h>
-#include "SSD1306Ascii.h"
+#include "SSD1306Ascii.h"  // https://github.com/greiman/SSD1306Ascii
 #include "SSD1306AsciiAvrI2c.h"
 
 // address in the EEPROM
@@ -196,7 +199,7 @@ void setup() {
   oled.begin(&Adafruit128x64, I2C_ADDRESS);
 #endif // RST_PIN >= 0
 
-  oled.setFont(cal96);
+//  oled.setFont(cal96);
   drawDisplay();
 
   numButtons = sizeof(buttonPins)/sizeof(buttonPins[0]);
@@ -407,12 +410,12 @@ void doRotaryButton() {
     }
     else if (adjust == EXIT) {
       isCount = true;
-      oled.setFont(cal96);  // ball count font
+//      oled.setFont(cal96);  // ball count font
     }
     else if (adjust == SAVE) {
       save();
       isCount = true;
-      oled.setFont(cal96);  // ball count font
+//      oled.setFont(cal96);  // ball count font
     }
   }
   
@@ -587,9 +590,9 @@ void jammed(void) {
   oled.print(F("JAMMED"));
 
   oled.set1X();
-  if (isCount)
-    oled.setFont(cal96);    // ball count font
-  else
+//  if (isCount)
+//    oled.setFont(cal96);    // ball count font
+//  else
     oled.setFont(Arial14);  // menu font
 
   isJammed = true;
