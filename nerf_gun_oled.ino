@@ -1,13 +1,34 @@
 /**
  * set tools->board->arduino nano
+ * set tools->processor->ATmega328P (Old Bootloader)
+ * 
+ * making the custom font:
+ * use openGLCDFontCreator.zip
+ * run start.bat
+ * file->new font
+ * name: cal96
+ * start index: 48   (this is 0)
+ * char count: 10 (we only want 0 thru 9)
+ * import font: calibri
+ * size: 96
+ * click ok
+ * click export
+ * save file as cal96.h
+ * copy cal96.h to Arduino\libraries\SSD1306Ascii-master\src\fonts
+ * edit allFonts.h and add: 
+ * #include "cal96.h"
+ * code should build and run correctly
+ *
+ *
+ * 
+ * read the voltage off the ref pin with a voltmeter: vref
+ * these were measured with an ohmmeter: r1 and r2
  */
-
-// cal96 ?
 
 
 #include <EEPROM.h>
 #include <Wire.h> 
-#include <Encoder.h>
+#include <Encoder.h>  // https://github.com/PaulStoffregen/Encoder (installed via library manager)
 #include <SPI.h>
 #include "SSD1306Ascii.h"  // https://github.com/greiman/SSD1306Ascii
 #include "SSD1306AsciiAvrI2c.h"
@@ -118,7 +139,6 @@ const byte speedPwm[] = {40, 70, 100};    // may need to fine tune this
 enum feedModes { LOW_FEED, MEDIUM_FEED, HIGH_FEED };
 const char *feedModeNames[] = {"low", "medium", "high"};
 const byte feedPwm[] = {40, 70, 100};    // may need to fine tune this
-
 enum adjustValues { SHOT, SPEED, FEED, EXIT, SAVE };
 const char *adjustNames[] = {"shot", "speed", "feed", "exit", "save/exit"};
 // this is an int since we check for negative values
@@ -159,6 +179,13 @@ volatile unsigned long lastBall = 0;
 volatile unsigned long ballGap = 0;
 #define TIME_BETWEEN_BALLS 10
 
+unsigned long lastBatteryCheckTime = 0;
+#define BATTERY_TIME 1000
+float r1 = 112200;
+float r2 = 10010;
+float ref = 1.01;
+
+
 void ball() {
   unsigned long startTime = millis();
   if ((startTime - lastBall) > TIME_BETWEEN_BALLS) {
@@ -170,6 +197,9 @@ void ball() {
 
 
 void setup() {
+  // use the internal 1.1v reference voltage for A2D conversions
+  analogReference(INTERNAL);
+   
   // set up the pwm outputs
   pinMode(FLYWHEEL_MOTOR, OUTPUT);
   pinMode(FEED_MOTOR, OUTPUT);
@@ -199,7 +229,7 @@ void setup() {
   oled.begin(&Adafruit128x64, I2C_ADDRESS);
 #endif // RST_PIN >= 0
 
-//  oled.setFont(cal96);
+  oled.setFont(cal96);
   drawDisplay();
 
   numButtons = sizeof(buttonPins)/sizeof(buttonPins[0]);
@@ -276,7 +306,7 @@ void drawBallCount() {
   Serial.println(F("draw ball count"));
   // show ball count
   sprintf(msg, "%d", numBalls);
-//  Serial.println(msg);
+  Serial.println(msg);
 
   oled.clear();
 
@@ -311,12 +341,51 @@ void loop() {
   
   checkButtons();
 
+  unsigned long mil = millis();
   if (!isSleep) {
-    if ((millis() - lastActionTime) > SLEEP_TIME) {
+    if ((mil - lastActionTime) > SLEEP_TIME) {
       isSleep = true;
       oled.clear();  
     }
-  }  
+  } 
+
+  if ((mil - lastBatteryCheckTime) > BATTERY_TIME) {
+    lastBatteryCheckTime = mil;
+    checkBattery();
+  }
+}
+
+
+void checkBattery() {
+  // don't check the battery if we're sleeping
+  // or if we're in the config menu
+  if (isSleep || !isCount) {
+    return;
+  }
+  
+//  Serial.println(F("check battery"));
+  float sum = 0;
+  for (int i = 0; i < 8; ++i) {
+    float adc = (float) analogRead(A0);
+    sum += adc;
+  }
+  sum /= 8;
+  float v = sum / 1024 * ref;
+  float v2 = v / (r2 / (r1 + r2));
+
+  dtostrf(v2, 5, 1, msg);
+  oled.setFont(Arial14);
+  uint8_t cols = oled.strWidth(msg);
+  uint8_t x = 128 - cols;
+  oled.setCursor(x,0);
+  oled.print(msg);
+  oled.setFont(cal96);
+
+  Serial.print(sum);
+  Serial.print(" ");
+  Serial.print(v);
+  Serial.print(" ");
+  Serial.println(v2);
 }
 
 
@@ -410,12 +479,12 @@ void doRotaryButton() {
     }
     else if (adjust == EXIT) {
       isCount = true;
-//      oled.setFont(cal96);  // ball count font
+      oled.setFont(cal96);  // ball count font
     }
     else if (adjust == SAVE) {
       save();
       isCount = true;
-//      oled.setFont(cal96);  // ball count font
+      oled.setFont(cal96);  // ball count font
     }
   }
   
@@ -590,9 +659,9 @@ void jammed(void) {
   oled.print(F("JAMMED"));
 
   oled.set1X();
-//  if (isCount)
-//    oled.setFont(cal96);    // ball count font
-//  else
+  if (isCount)
+    oled.setFont(cal96);    // ball count font
+  else
     oled.setFont(Arial14);  // menu font
 
   isJammed = true;
