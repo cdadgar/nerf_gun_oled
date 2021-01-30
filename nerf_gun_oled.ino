@@ -18,20 +18,18 @@
  * edit allFonts.h and add: 
  * #include "cal96.h"
  * code should build and run correctly
- *
- *
  * 
- * read the voltage off the ref pin with a voltmeter: vref
  * these were measured with an ohmmeter: r1 and r2
  */
 
 
 #include <EEPROM.h>
 #include <Wire.h> 
-#include <Encoder.h>  // https://github.com/PaulStoffregen/Encoder (installed via library manager)
+#include <Encoder.h>          // https://github.com/PaulStoffregen/Encoder (installed via library manager)
 #include <SPI.h>
-#include "SSD1306Ascii.h"  // https://github.com/greiman/SSD1306Ascii
+#include "SSD1306Ascii.h"     // https://github.com/greiman/SSD1306Ascii
 #include "SSD1306AsciiAvrI2c.h"
+#include <Adafruit_ADS1015.h> // https://github.com/adafruit/Adafruit_ADS1X15
 
 // address in the EEPROM
 // Arduino Uno:        1kb EEPROM storage
@@ -46,6 +44,36 @@ struct Settings {
 };
 
 Settings settings;
+
+// default uses 0x48 for the address (tie ADR to GND)
+Adafruit_ADS1115 ads;
+double gain;
+double r1 = 3326;
+double r2 = 2190;
+int lastPercent = 0;
+float percents[] = {
+  12.6,
+  12.45,
+  12.33,
+  12.25,
+  12.07,
+  11.95,
+  11.86,
+  11.74,
+  11.62,
+  11.56,
+  11.51,
+  11.45,
+  11.39,
+  11.36,
+  11.3,
+  11.24,
+  11.18,
+  11.12,
+  11.06,
+  10.83,
+  9.82,
+};
 
   
 // 0X3C+SA0 - 0x3C or 0x3D
@@ -181,9 +209,6 @@ volatile unsigned long ballGap = 0;
 
 unsigned long lastBatteryCheckTime = 0;
 #define BATTERY_TIME 1000
-float r1 = 112200;
-float r2 = 10010;
-float ref = 1.01;
 
 
 void ball() {
@@ -197,9 +222,6 @@ void ball() {
 
 
 void setup() {
-  // use the internal 1.1v reference voltage for A2D conversions
-  analogReference(INTERNAL);
-   
   // set up the pwm outputs
   pinMode(FLYWHEEL_MOTOR, OUTPUT);
   pinMode(FEED_MOTOR, OUTPUT);
@@ -223,6 +245,8 @@ void setup() {
   pinMode(interruptPin, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(interruptPin), ball, FALLING);
 
+  setUpBattery();
+  
 #if RST_PIN >= 0
   oled.begin(&Adafruit128x64, I2C_ADDRESS, RST_PIN);
 #else // RST_PIN >= 0
@@ -249,6 +273,31 @@ void setup() {
 
   load();
 }
+
+
+void setUpBattery() {
+  //                                                             ADS1015  ADS1115
+  ads.setGain(GAIN_TWOTHIRDS);  // 2/3x gain +/- 6.144V  1 bit = 3mV      0.1875mV (default)
+  gain = 0.0001873;  // 0.1875mV
+  ads.begin();
+}
+
+
+int getPercent(double volts) {
+  for (int i = 0; i < 21; ++i) {
+    if (volts >= percents[i]) {
+      if (i == 0) {
+        return 100 - i * 5;
+      }
+      else {
+        // calculate the middle point
+        return 100 - i * 5 + (volts - percents[i]) * 5 / (percents[i-1] - percents[i]);
+      }
+    }
+  }
+  return 0;
+}
+
 
 void load() {
   Serial.println(F("load"));
@@ -314,6 +363,9 @@ void drawBallCount() {
   uint8_t x = (128 - cols)/2;
   oled.setCursor(x,0);
   oled.print(msg);
+
+  // also update the battery level since we cleared the screen
+  drawBattery();
 }
 
 
@@ -364,28 +416,31 @@ void checkBattery() {
   }
   
 //  Serial.println(F("check battery"));
-  float sum = 0;
-  for (int i = 0; i < 8; ++i) {
-    float adc = (float) analogRead(A0);
-    sum += adc;
+  int16_t adc0 = ads.readADC_SingleEnded(0);
+  double volts = gain * adc0;
+  double v2 = volts * (r1 + r2) / r2;
+  int percent = getPercent(v2);
+  Serial.print("AIN0: ");
+  Serial.print(adc0);
+  Serial.print(", volts: ");
+  Serial.print(v2);
+  Serial.print(", percent: ");
+  Serial.println(percent);
+  if (percent != lastPercent) {
+    lastPercent = percent;
+    drawBattery();
   }
-  sum /= 8;
-  float v = sum / 1024 * ref;
-  float v2 = v / (r2 / (r1 + r2));
+}
 
-  dtostrf(v2, 5, 1, msg);
+
+void drawBattery() {
+  sprintf(msg, " %3d%%", lastPercent);
   oled.setFont(Arial14);
   uint8_t cols = oled.strWidth(msg);
   uint8_t x = 128 - cols;
   oled.setCursor(x,0);
   oled.print(msg);
   oled.setFont(cal96);
-
-  Serial.print(sum);
-  Serial.print(" ");
-  Serial.print(v);
-  Serial.print(" ");
-  Serial.println(v2);
 }
 
 
