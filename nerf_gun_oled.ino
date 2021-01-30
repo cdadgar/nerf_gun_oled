@@ -50,6 +50,7 @@ Adafruit_ADS1115 ads;
 double gain;
 double r1 = 3326;
 double r2 = 2190;
+double lastVolts = 0;
 int lastPercent = 0;
 float percents[] = {
   12.6,
@@ -419,6 +420,7 @@ void checkBattery() {
   int16_t adc0 = ads.readADC_SingleEnded(0);
   double volts = gain * adc0;
   double v2 = volts * (r1 + r2) / r2;
+  lastVolts = v2;
   int percent = getPercent(v2);
   Serial.print("AIN0: ");
   Serial.print(adc0);
@@ -434,12 +436,20 @@ void checkBattery() {
 
 
 void drawBattery() {
-  sprintf(msg, " %3d%%", lastPercent);
   oled.setFont(Arial14);
+
+  sprintf(msg, " %3d%%", lastPercent);
   uint8_t cols = oled.strWidth(msg);
   uint8_t x = 128 - cols;
   oled.setCursor(x,0);
   oled.print(msg);
+  
+  dtostrf(lastVolts, 6, 1, msg);
+  cols = oled.strWidth(msg);
+  x = 128 - cols;
+  oled.setCursor(x,2);
+  oled.print(msg);
+
   oled.setFont(cal96);
 }
 
